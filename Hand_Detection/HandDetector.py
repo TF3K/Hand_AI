@@ -1,52 +1,58 @@
 import cv2 as cv
 import mediapipe as mp
-import os
-import logging as lg
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.models import load_model
+from Hand_Detection.Commands import Commands
 
 class HandDetector:
     def __init__(self, cam_index=0):
-        self.cap = cv.VideoCapture(cam_index)
-        self.mp_hands = mp.solutions.hands
+        self.commands = Commands()
+        self.cap = cv.VideoCapture(cam_index)  # Check camera index
 
-    def detect_peace_hand_sign(self, hand_landmarks):
-        if hand_landmarks is not None:
-            if (hand_landmarks.landmark[mp.solutions.hands.HandLandmark.INDEX_FINGER_TIP].y <
-                hand_landmarks.landmark[mp.solutions.hands.HandLandmark.INDEX_FINGER_DIP].y and
-                hand_landmarks.landmark[mp.solutions.hands.HandLandmark.MIDDLE_FINGER_TIP].y <
-                hand_landmarks.landmark[mp.solutions.hands.HandLandmark.MIDDLE_FINGER_DIP].y and
-                hand_landmarks.landmark[mp.solutions.hands.HandLandmark.RING_FINGER_TIP].y >
-                hand_landmarks.landmark[mp.solutions.hands.HandLandmark.RING_FINGER_DIP].y and
-                hand_landmarks.landmark[mp.solutions.hands.HandLandmark.PINKY_TIP].y >
-                hand_landmarks.landmark[mp.solutions.hands.HandLandmark.PINKY_DIP].y):
-                return True
-            return False
+        # Check if camera opened successfully
+        if not self.cap.isOpened():
+            print("Error opening camera!")
+            return
+
+        self.mpHands = mp.solutions.hands
+        self.hands = self.mpHands.Hands(max_num_hands=1, min_detection_confidence=0.9)
+        self.mpDraw = mp.solutions.drawing_utils
+        self.model = load_model('Hand_Detection/mp_hand_gesture')
 
     def run(self):
+        f = open('gesture.names', 'r')
+        classNames = f.read().split("\n")
+        f.close()
+        print(classNames)
+
         while self.cap.isOpened():
-            os.system("clear")
-            ret, img = self.cap.read()
-            if not ret:
-                break
+            _, frame = self.cap.read()
+            x, y, c = frame.shape
+            frame = cv.flip(frame, 1)
+            framergb = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
+            res = self.hands.process(framergb)
+            className = ""
 
-            img = cv.cvtColor(img,cv.COLOR_BGR2RGB)
-            res = self.mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.7).process(img)
-
-            img = cv.cvtColor(img,cv.COLOR_RGB2BGR)
             if res.multi_hand_landmarks:
-                for hand in res.multi_hand_landmarks:
-                    for point in hand.landmark:
-                        x, y = int(point.x * img.shape[1]), int(point.y * img.shape[0])
-                        cv.circle(img, (x, y), 5, (0, 255, 0), -1)
-
-                    if self.detect_peace_hand_sign(hand):
-                        lg.info("Peace hand sign detected!")
+                landmarks = []
+                for handlms in res.multi_hand_landmarks:
+                    for lm in handlms.landmark:
+                        lmx = int(lm.x * x)
+                        lmy = int(lm.y * y)
+                        landmarks.append([lmx, lmy])
+                    landmarks = np.expand_dims(landmarks, axis=0)  # Add batch dimension
+                    prediction = self.model.predict(landmarks)
+                    classID = np.argmax(prediction)
+                    if 0 <= classID < len(classNames):  # Check valid range
+                        className = classNames[classID]
+                        self.commands.execute_commands(classID)
                     else:
-                        lg.info("Peace hand sign not detected.")
-
-            cv.imshow('Hand Detector', img)
-            if cv.waitKey(1) & 0xFF == ord('q'):
+                        print("Invalid class ID:", classID)
+                
+            cv.imshow("Hand Detection", frame)
+            if cv.waitKey(1) == ord('q'):
                 break
 
         self.cap.release()
         cv.destroyAllWindows()
-        
