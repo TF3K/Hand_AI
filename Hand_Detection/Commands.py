@@ -46,20 +46,21 @@ class Commands:
     def right_click(self):
         pag.click(button="right")
 
-    def mute_unmute_microphone(self):
+    def mute_unmute_speaker(self):
         if platform.system() == 'Windows':
             devices = sd.query_devices()
-            mic_index = [i for i, device in enumerate(devices) if device['name'] == 'Microphone'][0]
+            speaker_index = [i for i, device in enumerate(devices) if 'Speakers' in device['name'].lower()]
+            if speaker_index:
+                speaker_index = speaker_index[0]
 
-            current_state = sd.query_devices()[mic_index]['muted']
-            sd.query_devices()[mic_index]['muted'] = not current_state
+                current_state = sd.query_devices()[speaker_index]['muted']
+                sd.query_devices()[speaker_index]['muted'] = not current_state
+            else:
+                print("Speaker not found.")
         elif platform.system() == 'Linux':
-            output = os.popen("amixer get Master unmute").read().strip()
-            is_muted = output.split("[")[1].split("]")[0] == "off"
-
-            os.system(f"amixer set Master {('unmute' if is_muted else 'mute')}")
+            os.system("amixer -D pulse set Master toggle")
         else:
-            print("Microphone control support is not supported on this platform")
+            print("Speaker control support is not supported on this platform")
 
     def execute_commands(self,class_id):
         if 0 <= class_id < len(self.command_map):
@@ -83,5 +84,5 @@ class Commands:
                 case 8:
                     self.right_click()
                 case 9:
-                    self.mute_unmute_microphone()
+                    self.mute_unmute_speaker()
 
